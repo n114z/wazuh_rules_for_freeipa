@@ -1,0 +1,198 @@
+<group name="thesis,normalization">
+
+  <!-- Kerberos rules -->
+  <!--
+
+  Feb 12 09:39:49 ipa.mydomain.local krb5kdc[1671](info): AS_REQ (3 etypes {aes256-cts-hmac-sha1-96(18), aes128-cts-hmac-sha1-96(17), DEPRECATED:arcfour-hmac(23)}) 192.168.147.139: PREAUTH_FAILED: niiaz@MYDOMAIN.LOCAL for krbtgt/MYDOMAIN.LOCAL@MYDOMAIN.LOCAL, Preauthentication failed
+
+  -->
+
+  <rule id="100002" level="3">
+    <decoded_as>krb5kdc_rule</decoded_as>
+    <description>Kerberos event</description>
+  </rule>
+
+  <rule id="100003" level="3">
+    <if_sid>100002</if_sid>
+    <match>Preauthentication failed</match>
+    <description>Kerberos: unsuccessful authentication of $(dstuser)</description>
+  </rule>
+
+ <!-- LDAP rules -->
+
+  <rule id="100004" level="3">
+    <decoded_as>ldap_rule</decoded_as>
+    <description>LDAP event</description>
+  </rule>
+
+  <!--
+
+  [13/Feb/2026:10:12:36.136734792 +0300] conn=167 fd=101 slot=101 connection from 192.168.147.139 to 192.168.147.137
+  [13/Feb/2026:10:12:36.141916933 +0300] conn=167 op=0 BIND dn="cn=Directory Manager" method=128 version=3
+  [13/Feb/2026:10:12:36.159327643 +0300] conn=167 op=0 RESULT err=49 tag=97 nentries=0 wtime=0.004125070 optime=0.017416911 etime=0.021536356 - Invalid credentials
+
+  -->
+
+  <rule id="100005" level="3">
+    <if_sid>100004</if_sid>
+    <match>Invalid credentials</match>
+    <description>LDAP authentication failed in $(dstip) for user $(dstuser) from $(srcip)</description>
+  </rule>
+
+  <!-- 
+
+  [14/Feb/2026:19:48:07.319333225 +0300]] conn=167 fd=101 slot=101 connection from 192.168.147.139 to 192.168.147.137
+  [14/Feb/2026:19:48:07.319333225 +0300] conn=167 op=0 BIND dn="cn=Directory Manager" method=128 version=3
+  [14/Feb/2026:19:48:07.319333225 +0300] conn=167 op=1 SRCH base="cn=config" scope=2 filter="(objectClass=*)" attrs=ALL
+
+  -->
+
+  <rule id="100006" level="3">
+    <if_sid>100004</if_sid>
+    <match>SRCH</match>
+    <description>User $(dstuser) made query to server $(dstip) from $(srcip). Query base: $(ldap_base); query filter: $(ldap_filter); query attributes: $(ldap_search_attr)</description>
+  </rule>
+
+</group>
+
+
+<group name="thesis,attacks">
+
+  <!-- Password attacks via Kerberos -->
+  <rule id="110001" level="10" frequency="5" timeframe="120">
+    <if_matched_sid>100003</if_matched_sid>
+    <same_srcip />
+    <same_user />
+    <status>failed</status>
+    <description>Bruteforce attack via Kerberos from $(srcip)</description>
+  </rule>
+
+  <rule id="110002" level="10" frequency="5" timeframe="120">
+    <if_matched_sid>100003</if_matched_sid>
+    <same_srcip />
+    <different_user />
+    <status>failed</status>
+    <description>Password spray attack via Kerberos from $(srcip)</description>
+  </rule>
+
+  <!-- Password attacks via LDAP -->
+  <rule id="110003" level="10" frequency="5" timeframe="120">
+    <if_matched_sid>100005</if_matched_sid>
+    <same_srcip />
+    <same_user />
+    <description>Bruteforce attack via LDAP from $(srcip) for user $(dstuser)</description>
+  </rule>
+
+  <rule id="110004" level="10" frequency="5" timeframe="120">
+    <if_matched_sid>100005</if_matched_sid>
+    <same_srcip />
+    <different_user />
+    <description>Password spray attack via LDAP from $(srcip)</description>
+  </rule>
+
+  <!-- Keyring access -->
+  <rule id="110005" level="10">
+    <if_sid>80700</if_sid>
+    <field name="audit.syscall">250</field>
+    <field name="audit.key">keyctl_event</field>
+    <description>Data from keyring was read by process $(audit.exe). The commandline: $(audit.command)</description>
+  </rule>
+
+  <!-- Keytab files access -->
+  <rule id="110007" level="10">
+    <if_sid>80700</if_sid>
+    <field name="audit.key">keytab_files_access</field>
+    <description>Keytab file was accessed by process $(audit.exe). The commandline: $(audit.command)</description>
+  </rule>
+
+  <!-- Suspicious ldap query -->
+
+  <rule id="110008" level="0">
+    <if_sid>100006</if_sid>
+    <field name="ldap_base" type="pcre2">(?i)ipaNTHash|userPassword|krbMKey|krbPrincipalKey</field>
+    <group>ldap_query_check</group>
+    <description>Ldap base field have suspicious attribute</description>
+  </rule>
+
+  <rule id="110009" level="0">
+    <if_sid>100006</if_sid>
+    <field name="ldap_filter" type="pcre2">(?i)ipaNTHash|userPassword|krbMKey|krbPrincipalKey</field>
+    <group>ldap_query_check</group>
+    <description>Ldap filter field have suspicious attribute</description>
+  </rule>
+
+  <rule id="110010" level="0">
+    <if_sid>100006</if_sid>
+    <field name="ldap_search_attr" type="pcre2">(?i)ipaNTHash|userPassword|krbMKey|krbPrincipalKey</field>
+    <group>ldap_query_check</group>
+    <description>Ldap base field have suspicious attribute</description>
+  </rule>
+
+  <rule id="110011" level="10">
+    <if_group>ldap_query_check</if_group>
+    <description>User $(dstuser) made suspicious query for LDAP server $(dstip) from $(srcip)</description>
+  </rule>
+
+  <!-- Dump ldap by Directory Manager -->
+  <rule id="110012" level="10">
+    <if_sid>100006</if_sid>
+    <user type="pcre2">(?i)\.*Directory Manager\.*</user>
+    <field name="ldap_filter" type="pcre2">(?i)objectClass=\*</field>
+    <description>LDAP information exported by Directory Manager</description>
+  </rule>
+
+  <!-- loginShell attribute modification -->
+
+  <rule id="100007" level="10">
+    <decoded_as>ldap_audit_log</decoded_as>
+    <field name="ldap_attr_loginshell">\.+</field>
+    <action>modify</action>
+    <description>User $(modifier_name) modified loginShell attribute for user $(ldap_dn) to $(ldap_attr_loginshell_value)</description>
+  </rule>
+
+  <!-- ipaSshPubKey attribute modification -->
+
+  <rule id="100008" level="10">
+    <decoded_as>ldap_audit_log</decoded_as>
+    <field name="ldap_attr_ipasshpubkey">\.+</field>
+    <action>modify</action>
+    <description>User $(modifier_name) modified ipaSshPubKey attribute for user $(ldap_dn) to "$(ldap_attr_ipasshpubkey_value)"</description>
+  </rule>
+
+  <!-- hbac modification -->
+
+  <rule id="100009" level="10">
+    <decoded_as>ldap_audit_log</decoded_as>
+    <field name="ldap_dn" type="pcre2">(?i)hbac</field>
+    <action>modify</action>
+    <description>User $(modifier_name) modified HBAC policy $(ldap_dn)</description>
+  </rule>
+
+  <!-- hbac creation -->
+
+  <rule id="100010" level="10">
+    <decoded_as>ldap_audit_log</decoded_as>
+    <field name="ldap_dn" type="pcre2">(?i)hbac</field>
+    <action>add</action>
+    <description>User $(creator_name) added HBAC policy $(ldap_cn)</description>
+  </rule>
+
+  <!-- sudo rule creation -->
+
+  <rule id="100011" level="10">
+    <decoded_as>ldap_audit_log</decoded_as>
+    <field name="ldap_dn" type="pcre2">(?i)sudorules</field>
+    <action>add</action>
+    <description>User $(creator_name) added new sudo rule "$(ldap_cn)".</description>
+  </rule>
+
+  <!-- sudo rule modification -->
+
+  <rule id="100012" level="10">
+    <decoded_as>ldap_audit_log</decoded_as>
+    <field name="ldap_dn" type="pcre2">(?i)sudorules</field>
+    <action>modify</action>
+    <description>User $(modifier_name) modified sudo rule "$(ldap_dn)".</description>
+  </rule>
+
+</group>
