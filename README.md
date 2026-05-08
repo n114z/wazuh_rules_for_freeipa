@@ -1,0 +1,1 @@
+# wazuh_rules_for_freeipa
