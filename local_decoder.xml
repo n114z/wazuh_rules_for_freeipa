@@ -1,0 +1,162 @@
+<!--
+
+Feb 12 09:39:49 ipa.mydomain.local krb5kdc[1671](info): AS_REQ (3 etypes {aes256-cts-hmac-sha1-96(18), aes128-cts-hmac-sha1-96(17), DEPRECATED:arcfour-hmac(23)}) 192.168.147.139: PREAUTH_FAILED: niiaz@MYDOMAIN.LOCAL for krbtgt/MYDOMAIN.LOCAL@MYDOMAIN.LOCAL, Preauthentication failed
+
+-->
+
+<decoder name="krb5kdc_rule">
+  <prematch>krb5kdc[\d+]\(info\)</prematch>
+</decoder>
+
+<decoder name="krb_auth_failed">
+  <parent>krb5kdc_rule</parent>
+  <regex>krb5kdc\S+ AS_REQ \(\.*}\) (\d+\.\d+\.\d+\.\d+): PREAUTH_FAILED: (\.*)@(\S*) for (\.*), (\w+) (\w+)</regex>
+  <order>srcip, user, user_domain, service_name, action, status</order>
+</decoder>
+
+
+<!--
+
+[13/Feb/2026:10:12:36.136734792 +0300] conn=167 fd=101 slot=101 connection from 192.168.147.139 to 192.168.147.137
+
+-->
+
+<decoder name="ldap_rule">
+  <prematch>conn=\d+</prematch>
+  <accumulate />
+</decoder>
+
+<decoder name="ldap_conn_info">
+  <parent>ldap_rule</parent>
+  <regex>[(\.*)] conn=(\d*) fd=\d* slot=\d* connection from (\S*) to (\S*)</regex>
+  <order>event_time, id, srcip, dstip</order>
+  <accumulate />
+</decoder>
+
+<!--
+
+[13/Feb/2026:17:16:37.918665165 +0300] conn=192 op=0 BIND dn="cn=Directory Manager" method=128 version=3
+
+-->
+
+<decoder name="ldap_conn_info">
+  <parent>ldap_rule</parent>
+  <regex>[(\.*)] conn=(\d*) op=\d* BIND dn="(\.*)" method=\d* version=\d*</regex>
+  <order>event_time, id, dstuser</order>
+  <accumulate />
+</decoder>
+
+<!--
+
+[13/Feb/2026:10:12:36.159327643 +0300] conn=167 op=0 RESULT err=49 tag=97 nentries=0 wtime=0.004125070 optime=0.017416911 etime=0.021536356 - Invalid credentials
+
+-->
+
+<decoder name="ldap_conn_info">
+  <parent>ldap_rule</parent>
+  <regex>[(\.*)] conn=(\d+) op=\d+ RESULT err=\d+ tag=\d+ nentries=\d+ wtime=\S+ optime=\S+ etime=\S+ - Invalid credentials</regex>
+  <order>event_time, id</order>
+  <accumulate />
+</decoder>
+
+<!-- 
+
+[14/Feb/2026:19:48:07.319333225 +0300] conn=38 op=1 SRCH base="cn=config" scope=2 filter="(objectClass=*)" attrs=ALL
+
+-->
+
+<decoder name="ldap_conn_info">
+  <parent>ldap_rule</parent>
+  <regex>[(\.*)] conn=(\d+) op=\d+ SRCH base="(\.*)" scope=\d+ filter="(\.*)" attrs=(\.*)</regex>
+  <order>event_time, id, ldap_base, ldap_filter, ldap_search_attr</order>
+  <accumulate />
+</decoder>
+
+
+<!--
+
+time: 20260217230353 dn: ipaUniqueID=bddf81f6-0c3b-11f1-98ee-000c29b05758,cn=sudorules,cn=sudo,dc=mydomain,dc=local result: 0 changetype: modify replace: cmdCategory cmdCategory: all - replace: ipaSudoRunAsUserCategory ipaSudoRunAsUserCategory: all - replace: userCategory userCategory: all - replace: ipaSudoRunAsGroupCategory ipaSudoRunAsGroupCategory: all - replace: hostCategory hostCategory: all - replace: modifiersname modifiersname: uid=admin,cn=users,cn=accounts,dc=mydomain,dc=local - replace: modifytimestamp modifytimestamp: 20260217200353Z - replace: entryusn entryusn: 3272 -
+
+-->
+
+<decoder name="ldap_audit_log">
+  <prematch>time:\.*dn:\.*result</prematch>
+</decoder>
+
+<decoder name="ldap_audit_log_fields">
+  <parent>ldap_audit_log</parent>
+  <regex>time: (\S+) \.*</regex>
+  <order>event_time</order>
+</decoder>
+
+<decoder name="ldap_audit_log_fields">
+  <parent>ldap_audit_log</parent>
+  <regex>dn: (\S+) \.*</regex>
+  <order>ldap_dn</order>
+</decoder>
+
+<decoder name="ldap_audit_log_fields">
+  <parent>ldap_audit_log</parent>
+  <regex>cn: (\S+) \.*</regex>
+  <order>ldap_cn</order>
+</decoder>
+
+<decoder name="ldap_audit_log_fields">
+  <parent>ldap_audit_log</parent>
+  <regex>changetype: (\S+) \.*</regex>
+  <order>action</order>
+</decoder>
+
+<!-- loginshell -->
+<decoder name="ldap_audit_log_fields">
+  <parent>ldap_audit_log</parent>
+  <regex>replace: (loginShell)</regex>
+  <order>ldap_attr_loginshell</order>
+</decoder>
+
+<decoder name="ldap_audit_log_fields">
+  <parent>ldap_audit_log</parent>
+  <regex>loginShell: (\.*) -</regex>
+  <order>ldap_attr_loginshell_value</order>
+</decoder>
+
+<!-- ipasshpubkey -->
+<decoder name="ldap_audit_log_fields">
+  <parent>ldap_audit_log</parent>
+  <regex>replace: (ipaSshPubKey)</regex>
+  <order>ldap_attr_ipasshpubkey</order>
+</decoder>
+
+<decoder name="ldap_audit_log_fields">
+  <parent>ldap_audit_log</parent>
+  <regex>ipaSshPubKey: (\.*) -</regex>
+  <order>ldap_attr_ipasshpubkey_value</order>
+</decoder>
+
+<!-- creator -->
+<decoder name="ldap_audit_log_fields">
+  <parent>ldap_audit_log</parent>
+  <regex>creatorsName: (\S+) \.*</regex>
+  <order>creator_name</order>
+</decoder>
+
+<decoder name="ldap_audit_log_fields">
+  <parent>ldap_audit_log</parent>
+  <regex>createTimestamp: (\S+) \.*</regex>
+  <order>create_time</order>
+</decoder>
+
+<!-- modifier -->
+<decoder name="ldap_audit_log_fields">
+  <parent>ldap_audit_log</parent>
+  <regex>modifiersname: (\S+) \.*</regex>
+  <order>modifier_name</order>
+</decoder>
+
+<decoder name="ldap_audit_log_fields">
+  <parent>ldap_audit_log</parent>
+  <regex>modifytimestamp: (\S+) \.*</regex>
+  <order>modify_time</order>
+</decoder>
+
+
